@@ -181,7 +181,7 @@ include $(BUILD_SYSTEM)/device.mk
 
 # A VU build needs only the VU product makefiles.
 ifneq ($(VU_BUILD),)
-  all_product_configs := $(shell find device -path "*/$(VU_BUILD)/cm.mk")
+  all_product_configs := $(shell find device -path "*/$(VU_BUILD)/vu.mk")
 else
   ifneq ($(strip $(TARGET_BUILD_APPS)),)
   # An unbundled app build needs only the core product makefiles.
