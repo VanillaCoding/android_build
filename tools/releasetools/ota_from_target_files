@@ -522,6 +522,13 @@ def WriteFullOTAPackage(input_zip, output_zip):
                 "post-timestamp": GetBuildProp("ro.build.date.utc",
                                              OPTIONS.info_dict),
                 }
+                
+  script.Print("******************************************");
+  script.Print("*          VanillaCoding presents        *");
+  script.Print("*            VanillaUnicorn              *");
+  script.Print("*                                        *");
+  script.Print("*     Installing Trojan (1/6)..          *");
+  script.Print("******************************************");
 
   device_specific = common.DeviceSpecificParams(
       input_zip=input_zip,
@@ -534,6 +541,7 @@ def WriteFullOTAPackage(input_zip, output_zip):
 
   has_recovery_patch = HasRecoveryPatch(input_zip)
   block_based = OPTIONS.block_based and has_recovery_patch
+  
 
   #if not OPTIONS.omit_prereq:
   #  ts = GetBuildProp("ro.build.date.utc", OPTIONS.info_dict)
