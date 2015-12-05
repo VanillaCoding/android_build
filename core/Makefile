@@ -1910,9 +1910,345 @@ $(INTERNAL_OTA_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) $(DISTTOOLS)
 	   $(if $(OEM_OTA_CONFIG), -o $(OEM_OTA_CONFIG)) \
 	   $(BUILT_TARGET_FILES_PACKAGE) $@
 
-VU_TARGET_PACKAGE := $(PRODUCT_OUT)/vanilla-$(VU_VERSION).zip
+VU_TARGET_PACKAGE := $(PRODUCT_OUT)/cm-$(CM_VERSION).zip
 
-.PHONY: otapackage vulude $(sort $(wildcard device/*/*/build/tasks/*.mk))
+.PHONY: otapackage vu
+otapackage: $(INTERNAL_OTA_PACKAGE_TARGET)
+vu: otapackage
+	$(hide) ln -f $(INTERNAL_OTA_PACKAGE_TARGET) $(VU_TARGET_PACKAGE)
+	$(hide) $(MD5SUM) $(VU_TARGET_PACKAGE) > $(VU_TARGET_PACKAGE).md5sum
+	@echo -e ${CL_CYN}"Package Complete: $(VU_TARGET_PACKAGE)"${CL_RST}
+
+# -----------------------------------------------------------------
+# The factory package
+
+name := $(TARGET_PRODUCT)-factory-$(FILE_NAME_TAG)
+
+INTERNAL_FACTORY_PACKAGE_TARGET := $(PRODUCT_OUT)/$(name).zip
+
+ifeq ($(TARGET_RELEASETOOLS_EXTENSIONS),)
+# default to common dir for device vendor
+$(INTERNAL_FACTORY_PACKAGE_TARGET): extensions := $(TARGET_DEVICE_DIR)/../common
+else
+$(INTERNAL_FACTORY_PACKAGE_TARGET): extensions := $(TARGET_RELEASETOOLS_EXTENSIONS)
+endif
+
+$(INTERNAL_FACTORY_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) $(DISTTOOLS)
+	@echo -e ${CL_YLW}"Package:"${CL_RST}" $@"
+	if [ -z $(TARGET_RELEASETOOL_FACTORY_FROM_TARGET_SCRIPT) ]; then \
+          echo "Error: Factory script is not defined by target"; \
+          exit 1; \
+	fi
+	MKBOOTIMG=$(BOARD_CUSTOM_BOOTIMG_MK) \
+	$(TARGET_RELEASETOOL_FACTORY_FROM_TARGET_SCRIPT) -v \
+	   -s $(extensions) \
+	   -p $(HOST_OUT) \
+	   $(BUILT_TARGET_FILES_PACKAGE) $@
+
+.PHONY: factorypackage
+factorypackage: $(INTERNAL_FACTORY_PACKAGE_TARGET)
+
+endif    # recovery_fstab is defined
+endif    # TARGET_NO_KERNEL != true
+endif    # TARGET_DEVICE != generic*
+endif    # TARGET_PRODUCT != sdk
+
+# -----------------------------------------------------------------
+# The update package
+
+name := $(TARGET_PRODUCT)
+ifeq ($(TARGET_BUILD_TYPE),debug)
+  name := $(name)_debug
+endif
+name := $(name)-img-$(FILE_NAME_TAG)
+
+INTERNAL_UPDATE_PACKAGE_TARGET := $(PRODUCT_OUT)/$(name).zip
+
+ifeq ($(TARGET_RELEASETOOL_IMG_FROM_TARGET_SCRIPT),)
+    IMG_FROM_TARGET_SCRIPT := ./build/tools/releasetools/img_from_target_files
+else
+    IMG_FROM_TARGET_SCRIPT := $(TARGET_RELEASETOOL_IMG_FROM_TARGET_SCRIPT)
+endif
+
+$(INTERNAL_UPDATE_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) $(DISTTOOLS)
+	@echo -e ${CL_YLW}"Package:"${CL_RST}" $@"
+	$(hide) PATH=$(foreach p,$(INTERNAL_USERIMAGES_BINARY_PATHS),$(p):)$$PATH MKBOOTIMG=$(MKBOOTIMG) \
+	   $(IMG_FROM_TARGET_SCRIPT) -v \
+	   -p $(HOST_OUT) \
+	   $(BUILT_TARGET_FILES_PACKAGE) $@
+
+.PHONY: updatepackage
+updatepackage: $(INTERNAL_UPDATE_PACKAGE_TARGET)
+
+# -----------------------------------------------------------------
+# A zip of the symbols directory.  Keep the full paths to make it
+# more obvious where these files came from.
+#
+name := $(TARGET_PRODUCT)
+ifeq ($(TARGET_BUILD_TYPE),debug)
+  name := $(name)_debug
+endif
+name := $(name)-symbols-$(FILE_NAME_TAG)
+
+SYMBOLS_ZIP := $(PRODUCT_OUT)/$(name).zip
+# For apps_only build we'll establish the dependency later in build/core/main.mk.
+ifndef TARGET_BUILD_APPS
+$(SYMBOLS_ZIP): $(INSTALLED_SYSTEMIMAGE) $(INSTALLED_BOOTIMAGE_TARGET)
+endif
+$(SYMBOLS_ZIP):
+	@echo "Package symbols: $@"
+	$(hide) rm -rf $@
+	$(hide) mkdir -p $(dir $@) $(TARGET_OUT_UNSTRIPPED)
+	$(hide) zip -qr $@ $(TARGET_OUT_UNSTRIPPED)
+
+# -----------------------------------------------------------------
+# A zip of the Android Apps. Not keeping full path so that we don't
+# include product names when distributing
+#
+name := $(TARGET_PRODUCT)
+ifeq ($(TARGET_BUILD_TYPE),debug)
+  name := $(name)_debug
+endif
+name := $(name)-apps-$(FILE_NAME_TAG)
+
+APPS_ZIP := $(PRODUCT_OUT)/$(name).zip
+$(APPS_ZIP): $(INSTALLED_SYSTEMIMAGE)
+	@echo -e ${CL_YLW}"Package apps:"${CL_RST}" $@"
+	$(hide) rm -rf $@
+	$(hide) mkdir -p $(dir $@)
+	$(hide) zip -qj $@ $(TARGET_OUT_APPS)/*/*.apk $(TARGET_OUT_APPS_PRIVILEGED)/*/*.apk
+
+
+#------------------------------------------------------------------
+# A zip of emma code coverage meta files. Generated for fully emma
+# instrumented build.
+#
+ifeq (true,$(EMMA_INSTRUMENT))
+EMMA_META_ZIP := $(PRODUCT_OUT)/emma_meta.zip
+# the dependency will be set up later in build/core/main.mk.
+$(EMMA_META_ZIP) :
+	@echo "Collecting Emma coverage meta files."
+	$(hide) find $(TARGET_COMMON_OUT_ROOT) $(HOST_COMMON_OUT_ROOT) -name "coverage.em" | \
+		zip -@ -q $@
+
+endif # EMMA_INSTRUMENT=true
+
+#------------------------------------------------------------------
+# A zip of Proguard obfuscation dictionary files.
+# Only for apps_only build.
+#
+ifdef TARGET_BUILD_APPS
+PROGUARD_DICT_ZIP := $(PRODUCT_OUT)/$(TARGET_PRODUCT)-proguard-dict-$(FILE_NAME_TAG).zip
+# the dependency will be set up later in build/core/main.mk.
+$(PROGUARD_DICT_ZIP) :
+	@echo "Packaging Proguard obfuscation dictionary files."
+	$(hide) dict_files=`find $(TARGET_OUT_COMMON_INTERMEDIATES)/APPS -name proguard_dictionary`; \
+		if [ -n "$$dict_files" ]; then \
+		  unobfuscated_jars=$${dict_files//proguard_dictionary/classes.jar}; \
+		  zip -q $@ $$dict_files $$unobfuscated_jars; \
+		else \
+		  touch $(dir $@)/zipdummy; \
+		  (cd $(dir $@) && zip -q $(notdir $@) zipdummy); \
+		  zip -qd $@ zipdummy; \
+		  rm $(dir $@)/zipdummy; \
+		fi
+
+endif # TARGET_BUILD_APPS
+
+# -----------------------------------------------------------------
+# dalvik something
+.PHONY: dalvikfiles
+dalvikfiles: $(INTERNAL_DALVIK_MODULES)
+
+# -----------------------------------------------------------------
+# The emulator package
+ifeq ($(BUILD_EMULATOR),true)
+INTERNAL_EMULATOR_PACKAGE_FILES += \
+        $(HOST_OUT_EXECUTABLES)/emulator$(HOST_EXECUTABLE_SUFFIX) \
+        prebuilts/qemu-kernel/$(TARGET_ARCH)/kernel-qemu \
+        $(INSTALLED_RAMDISK_TARGET) \
+		$(INSTALLED_SYSTEMIMAGE) \
+		$(INSTALLED_USERDATAIMAGE_TARGET)
+
+name := $(TARGET_PRODUCT)-emulator-$(FILE_NAME_TAG)
+
+INTERNAL_EMULATOR_PACKAGE_TARGET := $(PRODUCT_OUT)/$(name).zip
+
+$(INTERNAL_EMULATOR_PACKAGE_TARGET): $(INTERNAL_EMULATOR_PACKAGE_FILES)
+	@echo -e ${CL_YLW}"Package:"${CL_RST}" $@"
+	$(hide) zip -qj $@ $(INTERNAL_EMULATOR_PACKAGE_FILES)
+
+endif
+# -----------------------------------------------------------------
+# Old PDK stuffs, retired
+# The pdk package (Platform Development Kit)
+
+#ifneq (,$(filter pdk,$(MAKECMDGOALS)))
+#  include development/pdk/Pdk.mk
+#endif
+
+
+# -----------------------------------------------------------------
+# The SDK
+
+# The SDK includes host-specific components, so it belongs under HOST_OUT.
+sdk_dir := $(HOST_OUT)/sdk/$(TARGET_PRODUCT)
+
+# Build a name that looks like:
+#
+#     linux-x86   --> android-sdk_12345_linux-x86
+#     darwin-x86  --> android-sdk_12345_mac-x86
+#     windows-x86 --> android-sdk_12345_windows
+#
+sdk_name := android-sdk_$(FILE_NAME_TAG)
+ifeq ($(HOST_OS),darwin)
+  INTERNAL_SDK_HOST_OS_NAME := mac
+else
+  INTERNAL_SDK_HOST_OS_NAME := $(HOST_OS)
+endif
+ifneq ($(HOST_OS),windows)
+  INTERNAL_SDK_HOST_OS_NAME := $(INTERNAL_SDK_HOST_OS_NAME)-$(SDK_HOST_ARCH)
+endif
+sdk_name := $(sdk_name)_$(INTERNAL_SDK_HOST_OS_NAME)
+
+sdk_dep_file := $(sdk_dir)/sdk_deps.mk
+
+ATREE_FILES :=
+-include $(sdk_dep_file)
+
+# if we don't have a real list, then use "everything"
+ifeq ($(strip $(ATREE_FILES)),)
+ATREE_FILES := \
+	$(ALL_PREBUILT) \
+	$(ALL_COPIED_HEADERS) \
+	$(ALL_DEFAULT_INSTALLED_MODULES) \
+	$(INSTALLED_RAMDISK_TARGET) \
+	$(ALL_DOCS) \
+	$(ALL_SDK_FILES)
+endif
+
+atree_dir := development/build
+
+
+sdk_atree_files := \
+	$(atree_dir)/sdk.exclude.atree \
+	$(atree_dir)/sdk-$(HOST_OS)-$(SDK_HOST_ARCH).atree
+
+# development/build/sdk-android-<abi>.atree is used to differentiate
+# between architecture models (e.g. ARMv5TE versus ARMv7) when copying
+# files like the kernel image. We use TARGET_CPU_ABI because we don't
+# have a better way to distinguish between CPU models.
+ifneq (,$(strip $(wildcard $(atree_dir)/sdk-android-$(TARGET_CPU_ABI).atree)))
+  sdk_atree_files += $(atree_dir)/sdk-android-$(TARGET_CPU_ABI).atree
+endif
+
+ifneq ($(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_SDK_ATREE_FILES),)
+sdk_atree_files += $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_SDK_ATREE_FILES)
+else
+sdk_atree_files += $(atree_dir)/sdk.atree
+endif
+
+include $(BUILD_SYSTEM)/sdk_font.mk
+
+deps := \
+	$(target_notice_file_txt) \
+	$(tools_notice_file_txt) \
+	$(OUT_DOCS)/offline-sdk-timestamp \
+	$(SYMBOLS_ZIP) \
+	$(INSTALLED_SYSTEMIMAGE) \
+	$(INSTALLED_USERDATAIMAGE_TARGET) \
+	$(INSTALLED_RAMDISK_TARGET) \
+	$(INSTALLED_SDK_BUILD_PROP_TARGET) \
+	$(INSTALLED_BUILD_PROP_TARGET) \
+	$(ATREE_FILES) \
+	$(sdk_atree_files) \
+	$(HOST_OUT_EXECUTABLES)/atree \
+	$(HOST_OUT_EXECUTABLES)/line_endings \
+	$(SDK_FONT_DEPS)
+
+INTERNAL_SDK_TARGET := $(sdk_dir)/$(sdk_name).zip
+$(INTERNAL_SDK_TARGET): PRIVATE_NAME := $(sdk_name)
+$(INTERNAL_SDK_TARGET): PRIVATE_DIR := $(sdk_dir)/$(sdk_name)
+$(INTERNAL_SDK_TARGET): PRIVATE_DEP_FILE := $(sdk_dep_file)
+$(INTERNAL_SDK_TARGET): PRIVATE_INPUT_FILES := $(sdk_atree_files)
+
+# Set SDK_GNU_ERROR to non-empty to fail when a GNU target is built.
+#
+#SDK_GNU_ERROR := true
+
+$(INTERNAL_SDK_TARGET): $(deps)
+	@echo "Package SDK: $@"
+	$(hide) rm -rf $(PRIVATE_DIR) $@
+	$(hide) for f in $(target_gnu_MODULES); do \
+	  if [ -f $$f ]; then \
+	    echo SDK: $(if $(SDK_GNU_ERROR),ERROR:,warning:) \
+	        including GNU target $$f >&2; \
+	    FAIL=$(SDK_GNU_ERROR); \
+	  fi; \
+	done; \
+	if [ $$FAIL ]; then exit 1; fi
+	$(hide) echo $(notdir $(SDK_FONT_DEPS)) | tr " " "\n"  > $(SDK_FONT_TEMP)/fontsInSdk.txt
+	$(hide) ( \
+		ATREE_STRIP="strip -x" \
+		$(HOST_OUT_EXECUTABLES)/atree \
+		$(addprefix -f ,$(PRIVATE_INPUT_FILES)) \
+			-m $(PRIVATE_DEP_FILE) \
+			-I . \
+			-I $(PRODUCT_OUT) \
+			-I $(HOST_OUT) \
+			-I $(TARGET_COMMON_OUT_ROOT) \
+			-v "PLATFORM_NAME=android-$(PLATFORM_VERSION)" \
+			-v "OUT_DIR=$(OUT_DIR)" \
+			-v "HOST_OUT=$(HOST_OUT)" \
+			-v "TARGET_ARCH=$(TARGET_ARCH)" \
+			-v "TARGET_CPU_ABI=$(TARGET_CPU_ABI)" \
+			-v "DLL_EXTENSION=$(HOST_SHLIB_SUFFIX)" \
+			-v "FONT_OUT=$(SDK_FONT_TEMP)" \
+			-o $(PRIVATE_DIR) && \
+		cp -f $(target_notice_file_txt) \
+				$(PRIVATE_DIR)/system-images/android-$(PLATFORM_VERSION)/$(TARGET_CPU_ABI)/NOTICE.txt && \
+		cp -f $(tools_notice_file_txt) $(PRIVATE_DIR)/platform-tools/NOTICE.txt && \
+		HOST_OUT_EXECUTABLES=$(HOST_OUT_EXECUTABLES) HOST_OS=$(HOST_OS) \
+			development/build/tools/sdk_clean.sh $(PRIVATE_DIR) && \
+		chmod -R ug+rwX $(PRIVATE_DIR) && \
+		cd $(dir $@) && zip -rq $(notdir $@) $(PRIVATE_NAME) \
+	) || ( rm -rf $(PRIVATE_DIR) $@ && exit 44 )
+
+
+# Is a Windows SDK requested? If so, we need some definitions from here
+# in order to find the Linux SDK used to create the Windows one.
+MAIN_SDK_NAME := $(sdk_name)
+MAIN_SDK_DIR  := $(sdk_dir)
+MAIN_SDK_ZIP  := $(INTERNAL_SDK_TARGET)
+ifneq ($(filter win_sdk winsdk-tools,$(MAKECMDGOALS)),)
+include $(TOPDIR)development/build/tools/windows_sdk.mk
+endif
+
+# -----------------------------------------------------------------
+# Findbugs
+INTERNAL_FINDBUGS_XML_TARGET := $(PRODUCT_OUT)/findbugs.xml
+INTERNAL_FINDBUGS_HTML_TARGET := $(PRODUCT_OUT)/findbugs.html
+$(INTERNAL_FINDBUGS_XML_TARGET): $(ALL_FINDBUGS_FILES)
+	@echo UnionBugs: $@
+	$(hide) $(FINDBUGS_DIR)/unionBugs $(ALL_FINDBUGS_FILES) \
+	> $@
+$(INTERNAL_FINDBUGS_HTML_TARGET): $(INTERNAL_FINDBUGS_XML_TARGET)
+	@echo ConvertXmlToText: $@
+	$(hide) $(FINDBUGS_DIR)/convertXmlToText -html:fancy.xsl \
+	$(INTERNAL_FINDBUGS_XML_TARGET) > $@
+
+# -----------------------------------------------------------------
+# Findbugs
+
+# -----------------------------------------------------------------
+# These are some additional build tasks that need to be run.
+ifneq ($(dont_bother),true)
+include $(sort $(wildcard $(BUILD_SYSTEM)/tasks/*.mk))
+-include $(sort $(wildcard vendor/*/build/tasks/*.mk))
+-include $(sort $(wildcard device/*/build/tasks/*.mk))
+# Also the project-specific tasks
+-include $(sort $(wildcard vendor/*/*/build/tasks/*.mk))
+-include $(sort $(wildcard device/*/*/build/tasks/*.mk))
 endif
 
 # -----------------------------------------------------------------
