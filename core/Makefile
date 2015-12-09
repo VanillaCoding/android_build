@@ -1008,9 +1008,6 @@ define build-recoveryimage-target
 endef
 
 $(recovery_uncompressed_ramdisk): $(MKBOOTFS) $(MINIGZIP) \
-endef
-
-$(recovery_uncompressed_ramdisk): $(MKBOOTFS) \
 		$(INSTALLED_RAMDISK_TARGET) \
 		$(INSTALLED_BOOTIMAGE_TARGET) \
 		$(INTERNAL_RECOVERYIMAGE_FILES) \
