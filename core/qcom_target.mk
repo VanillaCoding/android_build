@@ -13,8 +13,12 @@ endef
 
 # Set device-specific HALs into project pathmap
 define set-device-specific-path
-$(call project-set-path,qcom-$(2),$(strip $(if $(USE_DEVICE_SPECIFIC_$(1)), \
-    $(TARGET_DEVICE_DIR)/$(2), $(3))))
+$(if $(USE_DEVICE_SPECIFIC_$(1)), \
+    $(if $(DEVICE_SPECIFIC_$(1)_PATH), \
+        $(eval path := $(DEVICE_SPECIFIC_$(1)_PATH)), \
+        $(eval path := $(TARGET_DEVICE_DIR)/$(2))), \
+    $(eval path := $(3))) \
+$(call project-set-path,qcom-$(2),$(strip $(path)))
 endef
 
 ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
@@ -65,13 +69,20 @@ ifeq ($(BOARD_USES_QCOM_HARDWARE),true)
     endif
 
 $(call project-set-path,qcom-audio,hardware/qcom/audio-caf/$(QCOM_HARDWARE_VARIANT))
+
+ifeq ($(SONY_BF64_KERNEL_VARIANT),true)
+$(call project-set-path,qcom-display,hardware/qcom/display-caf/sony)
+$(call project-set-path,qcom-media,hardware/qcom/media-caf/sony)
+else
 $(call project-set-path,qcom-display,hardware/qcom/display-caf/$(QCOM_HARDWARE_VARIANT))
 $(call project-set-path,qcom-media,hardware/qcom/media-caf/$(QCOM_HARDWARE_VARIANT))
+endif
 
 $(call set-device-specific-path,CAMERA,camera,hardware/qcom/camera)
 $(call set-device-specific-path,GPS,gps,hardware/qcom/gps)
 $(call set-device-specific-path,SENSORS,sensors,hardware/qcom/sensors)
 $(call set-device-specific-path,LOC_API,loc-api,vendor/qcom/opensource/location)
+$(call set-device-specific-path,DATASERVICES,dataservices,vendor/qcom/opensource/dataservices)
 
 $(call ril-set-path-variant,ril)
 $(call wlan-set-path-variant,wlan-caf)
@@ -83,10 +94,11 @@ $(call project-set-path,qcom-audio,hardware/qcom/audio/default)
 $(call project-set-path,qcom-display,hardware/qcom/display/$(TARGET_BOARD_PLATFORM))
 $(call project-set-path,qcom-media,hardware/qcom/media/default)
 
-$(call project-set-path,CAMERA,hardware/qcom/camera)
-$(call project-set-path,GPS,hardware/qcom/gps)
-$(call project-set-path,SENSORS,hardware/qcom/sensors)
-$(call project-set-path,LOC_API,vendor/qcom/opensource/location)
+$(call project-set-path,qcom-camera,hardware/qcom/camera)
+$(call project-set-path,qcom-gps,hardware/qcom/gps)
+$(call project-set-path,qcom-sensors,hardware/qcom/sensors)
+$(call project-set-path,qcom-loc-api,vendor/qcom/opensource/location)
+$(call project-set-path,qcom-dataservices,$(TARGET_DEVICE_DIR)/dataservices)
 
 $(call ril-set-path-variant,ril)
 $(call wlan-set-path-variant,wlan)
