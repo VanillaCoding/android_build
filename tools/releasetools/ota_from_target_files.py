@@ -648,11 +648,25 @@ else if get_stage("%(bcb_dev)s") == "3/3" then
 
   if "selinux_fc" in OPTIONS.info_dict:
     WritePolicyConfig(OPTIONS.info_dict["selinux_fc"], output_zip)
+  
+  script.Print("******************************************");
+  script.Print("*          Oh look whats that ?          *");
+  script.Print("*                                        *");
+  script.Print("*                                        *");
+  script.Print("*                Unicorn incoming.. !    *");
+  script.Print("******************************************");
 
   recovery_mount_options = OPTIONS.info_dict.get("recovery_mount_options")
 
   system_items = ItemSet("system", "META/filesystem_config.txt")
   script.ShowProgress(system_progress, 0)
+  
+  script.Print("******************************************");
+  script.Print("*          VanillaCoding presents        *");
+  script.Print("*            VanillaUnicorn  v2 MM       *");
+  script.Print("*                                        *");
+  script.Print("*                ENJOY :) !              *");
+  script.Print("******************************************");
 
   if block_based:
     # Full OTA is done as an "incremental" against an empty source
