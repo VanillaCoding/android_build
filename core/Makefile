@@ -1179,8 +1179,8 @@ INTERNAL_SYSTEMIMAGE_FILES := $(filter $(TARGET_OUT)/%, \
 
 
 systemimage-changelog: $(INTERNAL_SYSTEMIMAGE_FILES)
-	@echo -e "Making changelog!"
-	$(hide) APKCERTS=$(APKCERTS_FILE) ./vendor/eos/tools/changelog
+	@echo -e "Unicorn working.. Please stand by!"
+	$(hide) APKCERTS=$(APKCERTS_FILE) ./vendor/vu/tools/changelog
 
 .PHONY: systemimage-changelog
 
